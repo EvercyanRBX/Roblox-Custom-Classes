@@ -57,8 +57,6 @@ function Signal.new(Index)
 			return
 		end
 		
-		----
-		
 		if Timeout then
 			local SignalYield = Signal.new()
 			
