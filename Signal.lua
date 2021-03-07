@@ -7,7 +7,7 @@ local Signal = {}
 ---- EXPOSED API ----------------------------------------
 
 function Signal.new(Index)
-	Index = Index or table.getn(Signals)
+	Index = Index or #Signals
 	
 	-- Signal already exists under a different name? Return it.
 	-- It's not recommended to make the Index a numerical value.
