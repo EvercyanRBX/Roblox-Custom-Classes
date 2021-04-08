@@ -46,8 +46,8 @@ if game.PlaceId == SoftShutdownPlace then -- SoftShutdown place in the universe
 		local TeleportOptions = Instance.new("TeleportOptions")
 		TeleportOptions.ReservedServerAccessCode = ReservedServerId
 		
-        -- Keep attempting to teleport players until there are no more.
-        -- We do this multiple times to make sure all of them get teleported in case if any players join late.
+		-- Keep attempting to teleport players until there are no more.
+		-- We do this multiple times to make sure all of them get teleported in case if any players join late.
 		while wait(10/4) do
 			local Success, Failure = pcall(function()
 				local TeleportResult = TeleportService:TeleportAsync(
