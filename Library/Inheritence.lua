@@ -77,7 +77,6 @@ function Inheritence:WaitForTag(Instance: Instance, TagName: string, Timeout: nu
 				task.wait(5)
 				if not HasTag then
 					warn("Infinite yield possible on Inheritence.WaitForTag")
-					wait(Instance, TagName)
 				end
 			end)
 		end
