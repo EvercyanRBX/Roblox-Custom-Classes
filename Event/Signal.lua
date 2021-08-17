@@ -78,7 +78,7 @@ function Signal:Wait(Timeout: number)
 		end)
 		
 		local Thread = coroutine.resume(coroutine.create(function()
-			wait(Timeout)
+			task.wait(Timeout)
 			SignalYield:Fire()
 		end))
 		
