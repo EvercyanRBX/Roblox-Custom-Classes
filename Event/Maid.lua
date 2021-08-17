@@ -6,101 +6,118 @@ local Tasks = {}
 local TasksCreated = 0
 
 -- Modules
-local Signal = require(PathToSignalClass)
+local Signal = require(ReplicatedStorage.Modules.Shared.Event.Signal)
 
 -- Mirror
 local Maid = {}
+local Task = {}
 
 ----
 
 local TaskThread = coroutine.create(function()
 	while true do
 		local PassedFunction = coroutine.yield()
-		PassedFunction() -- Runs the function that was given when running TaskThread.
+		PassedFunction()
 	end
 end)
 coroutine.resume(TaskThread)
 
----- EXPOSED API ----------------------------------------
+----
 
-function Maid:GetTaskCount()
-	return #Tasks
-end
+Maid.ClassName = "Maid"
 
-function Maid:GetTasks()
-	return Tasks
-end
-
-function Maid:AssignTask(Value, Link)
-	assert(Value, "A task value is required to create a new task.")
-	assert(Link, "A link (usually the script which required it) is required to create a new task.")
+function Maid:AssignTask(Value: Instance | RBXScriptConnection, Link): Task
+	TasksCreated += 1
 	
-	local DisconnectLinksEvent = Signal.new()
+	local FinishBinds = {}
+	local OnFinished = Signal.new()
+	local Finished = false
 	
-	local Links = (typeof(Link) == "table" and Link) or {Link}
-	local Values = (typeof(Value) == "table" and Value) or {Value}
+	local _Task = {}
+	_Task.ClassName = "Task"
+	_Task.Id = TasksCreated
+	_Task.Values = typeof(Value) == "table" and Value or {Value} -- Internal
+	_Task.Link = Link -- Internal
 	
-	local Task = {}
-	local TaskNumber = TasksCreated + 1
-	TasksCreated = TaskNumber
-	
-	Task.Id = TaskNumber
-	Task.Value = Values
-	Task.Finished = false
-	
-	function Task:Finish()
-		if not Task.Finished then
-			Task.Finished = true
-			
-			-- Disconnect link listeners
-			DisconnectLinksEvent:Fire()
-			DisconnectLinksEvent:Destroy()
-			
-			-- Disconnect/Destroy values
-			for Index, Value in pairs(Values) do
-				if typeof(Value) == "RBXScriptConnection" then
-					Values[Index]:Disconnect()
-				elseif typeof(Value) == "Instance" then
-					Values[Index]:Destroy()
-				end
+	setmetatable(_Task, {
+		__index = function(t, i)
+			if i == "Finished" then
+				return Finished
+			elseif i == "OnFinished" then
+				return OnFinished
+			elseif i == "FinishBinds" then -- Internal
+				return FinishBinds
 			end
-		end
-	end
-	
-	-- Automatically finish the task when the link(s) get deleted to prevent them hanging in memory forever.
-	coroutine.resume(TaskThread, function()
-		local LinkConnections = {}
-		
-		local function DisconnectLinks()
-			for Index, _ in pairs(LinkConnections) do
-				if LinkConnections[Index] and LinkConnections[Index].Connected then
-					LinkConnections[Index]:Disconnect()
-				end
+			
+			return Task[i]
+		end,
+		__newindex = function(t, i, v)
+			if t == FinishBinds then
+				FinishBinds[i] = v
 			end
-		end
-		
-		DisconnectLinksEvent:Connect(DisconnectLinks)
-		
-		for _, Link in pairs(Links) do
-			if not Task.Finished then
-				table.insert(LinkConnections, Link.AncestryChanged:Connect(function(Ancestor, NewParent)
+		end,
+	})
+	
+	if Link then
+		coroutine.resume(TaskThread, function()
+			if not Finished then
+				local Connection = Link.AncestryChanged:Connect(function(Ancestor, NewParent)
 					if NewParent == nil then
-						Task:Finish()
+						_Task:Finish()
 					end
-				end))
+				end)
+				
+				OnFinished:Connect(function()
+					if Connection and not Connection.Connected then
+						Connection:Disconnect()
+					end
+				end)
 			end
-		end
-	end)
+		end)
+	end
 	
-	Tasks[Task.Id] = Task
+	Tasks[_Task.Id] = _Task
 	
-	return Task
+	return _Task
 end
 
-function Maid:FinishTask(Id)
-	if Tasks[Id] then
-		Tasks[Id]:Finish()
+function Task:Finish()
+	if not self.Finished then
+		self.Finished = true
+		
+		-- Disconnect link listeners
+		self.OnFinished:Fire()
+		self.OnFinished:Destroy()
+		
+		-- Binded functions
+		for _, func in pairs(self.FinishBinds) do
+			func()
+		end
+		self.FinishBinds = {}
+		
+		-- Disconnect/Destroy value
+		for Index, Value in pairs(self.Values) do
+			if typeof(Value) == "RBXScriptConnection" then
+				self.Values[Index]:Disconnect()
+			elseif typeof(Value) == "Instance" then
+				self.Values[Index]:Destroy()
+			end
+		end
 	end
 end
 
-return Maid
+function Task:BindToFinish(func: any)
+	if not self.Finished and typeof(func) == "function" then
+		self.FinishBinds[#self.FinishBinds+1] = func
+	end
+end
+
+export type Task = {ClassName: string, Id: number, Finished: boolean, OnFinished: Signal}
+
+return setmetatable(Maid, {
+	__index = function(t, i)
+		if i == "Tasks" then
+			return Tasks
+		end
+	end,
+})
