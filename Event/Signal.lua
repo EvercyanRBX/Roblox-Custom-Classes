@@ -1,102 +1,114 @@
 -- Variables
-local Signals = {}
+local LastId = 0
 
 -- Mirror
 local Signal = {}
 
----- EXPOSED API ----------------------------------------
+---- EXPOSED API -------------------------------------------------------------------------------------------------------
 
-function Signal.new(Index)
-	Index = Index or #Signals
+-- Creates a new Signal class
+function Signal.new(): Signal
+	local Class = {}
 	
-	-- Signal already exists under a different name? Return it.
-	-- It's not recommended to make the Index a numerical value.
-	if Signals[Index] then
-		return Signals[Index]
-	end
+	-- Constants
+	Class.BindableEvent = Instance.new("BindableEvent")
 	
-	local BindableEvent = Instance.new("BindableEvent")
-	local AliveConnections = {}
-	local SignalAlive = true
+	-- Variables
+	local Connections = {}
+	local Alive = true
 	
-	local _Signal = {}
-	
-	function _Signal:Fire(...)
-		if not SignalAlive then
-			return
-		end
-		
-		BindableEvent:Fire(...)
-	end
-	
-	function _Signal:Connect(func)
-		if not SignalAlive then
-			return
-		end
-		
-		assert(func, "Signal.Connect: Argument 1 missing or nil.")
-		
-		----
-		
-		local Connection = BindableEvent.Event:Connect(func)
-		local RBXScriptConnection = {}
-		
-		function RBXScriptConnection:Disconnect()
-			AliveConnections[Connection] = nil
-			Connection:Disconnect()
-			Connection = nil
-		end
-		
-		AliveConnections[Connection] = RBXScriptConnection
-		
-		return RBXScriptConnection
-	end
-	
-	function _Signal:Wait(Timeout)
-		if not SignalAlive then
-			return
-		end
-		
-		if Timeout then
-			local SignalYield = Signal.new()
+	setmetatable(Class, {
+		__index = function(t, i)
+			if i == "Connections" then
+				return Connections
+			elseif i == "Alive" then
+				return Alive
+			end
 			
-			local Connection = _Signal:Connect(function(...)
-				SignalYield:Fire(table.pack(...))
-			end)
-			
-			local Thread = coroutine.resume(coroutine.create(function()
-				wait(Timeout)
-				SignalYield:Fire()
-			end))
-			
-			local Tuple = table.pack(SignalYield:Wait())
-			SignalYield:Destroy()
-			
-			return Tuple
-		else
-			return BindableEvent.Event:Wait()
-		end
+			if Alive then
+				-- Signal is alive, meaning we can use its functions.
+				return Signal[i]
+			end
+		end,
+		__newindex = function(t, i, v)
+			if t == Connections then
+				Connections[i] = v
+			elseif i == "Alive" then
+				Alive = v
+			end
+		end,
+	})
+	
+	LastId += 1
+	
+	return Class
+end
+
+-- Fires the signal
+function Signal:Fire(...)
+	self.BindableEvent:Fire(...)
+end
+
+-- Connects a function to run when the Signal is fired
+function Signal:Connect(func: any)
+	assert(func, "Signal.Connect: Argument 1 missing or nil.")
+	
+	local Connection = self.BindableEvent.Event:Connect(func)
+	local RBXScriptConnection = {}
+	
+	local Self = self -- Define self so we get the [Signal] class, not the [RBXScriptConnection] class inside of Disconnect.
+	function RBXScriptConnection:Disconnect()
+		Self.Connections[Connection] = nil
+		Connection:Disconnect()
+		Connection = nil
 	end
 	
-	function _Signal:Destroy()
-		if not SignalAlive then
-			return
-		end
-		SignalAlive = false
+	self.Connections[Connection] = RBXScriptConnection
+	
+	return RBXScriptConnection
+end
+
+-- Yields until the next time the Signal fires, with the optional given timeout value.
+function Signal:Wait(Timeout: number)
+	if Timeout then
+		local SignalYield = Signal.new()
 		
-		-- Disconnect and remove all alive connections that are connected to this signal.
-		for Connection, _ in pairs(AliveConnections) do
-			AliveConnections[Connection]:Disconnect()
-		end
+		local Connection = Signal:Connect(function(...)
+			SignalYield:Fire(table.pack(...))
+		end)
 		
-		BindableEvent:Destroy()
+		local Thread = coroutine.resume(coroutine.create(function()
+			wait(Timeout)
+			SignalYield:Fire()
+		end))
+		
+		local Tuple = table.pack(SignalYield:Wait())
+		SignalYield:Destroy()
+		
+		return Tuple
+	else
+		return self.BindableEvent.Event:Wait()
+	end
+end
+
+-- Destroys the Signal class
+function Signal:Destroy()
+	-- Disconnect and remove all alive connections that are connected to this signal.
+	for Connection, _ in pairs(self.Connections) do
+		self.Connections[Connection]:Disconnect()
 	end
 	
-	Signals[Index] = _Signal
-	
-	return _Signal
+	self.BindableEvent:Destroy()
+	self.Alive = false
 end
 
 ----
+
+type Fire = (...any) -> nil
+type Connect = (...any) -> RBXScriptConnection
+type Wait = (Timeout: number) -> any
+type Destroy = (nil) -> nil
+
+export type Signal = {Alive: boolean, Fire: Fire, Connect: Connect, Wait: Wait, Destroy: Destroy}
 
 return Signal
